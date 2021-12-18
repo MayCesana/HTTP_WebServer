@@ -10,7 +10,7 @@ using namespace std;
 const int MAX_LEN = 2048;
 const int PORT = 27015;
 const int MAX_SOCKETS = 60;
-const char* HTTP_VERSION = "HTTP/1.1";
+const char* HTTP_VERSION = "HTTP/1.1 ";
 const int EMPTY = 0;
 const int LISTEN = 1;
 const int RECEIVE = 2;
@@ -51,7 +51,7 @@ typedef struct response
 {
 	ResponseLine statusLine;
 	char* header;
-	char* body;
+	char* body = nullptr;
 }Response;
 
 struct SocketState
@@ -73,7 +73,7 @@ void acceptConnection(int index);
 fd_set createRecvSet();
 fd_set createSendSet();
 void receiveMessage(int index);
-//void sendMessage(int index);
+void sentResponse(int socket_index);
 WSAData InitWinsock();
 SOCKET CreateSocket(); 
 sockaddr_in CreateSocketAdd(SOCKET& m_socket);

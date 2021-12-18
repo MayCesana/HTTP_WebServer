@@ -133,35 +133,6 @@ void handleEvents(int nfd, fd_set waitRecv, fd_set waitSend)
 	}
 }
 
-void main()
-{
-	WSAData wsaData = InitWinsock();
-	SOCKET listenSocket = CreateSocket();
-	sockaddr_in serverService = CreateSocketAdd(listenSocket);
-
-	if (SOCKET_ERROR == listen(listenSocket, 5))
-	{
-		cout << "Time Server: Error at listen(): " << WSAGetLastError() << endl;
-		closesocket(listenSocket);
-		WSACleanup();
-		return;
-	}
-	addSocket(listenSocket, LISTEN);
-
-	while (true)
-	{
-		fd_set waitRecv = createRecvSet();
-		fd_set waitSend = createSendSet();
-		int nfd = checkEvents(waitRecv, waitSend);
-		handleEvents(nfd,waitRecv,waitSend);
-	}
-
-	// Closing connections and Winsock.
-	cout << "Time Server: Closing Connection.\n";
-	closesocket(listenSocket);
-	WSACleanup();
-}
-
 bool addSocket(SOCKET id, int what)
 {
 	for (int i = 0; i < MAX_SOCKETS; i++)
@@ -345,29 +316,77 @@ bool containsParams(char* request)
 	return false;
 }
 
-void get(int socket_index, Response& response)
+void findFileAndSetStatus(int socket_index, Response* response, FILE* file, char* fileName)
+{
+	strcat(fileName, sockets[socket_index].request.requestLine.uri);
+	if (sockets[socket_index].request.requestLine.lang != nullptr)
+	{
+		strcat(fileName, ".");
+		strcat(fileName, sockets[socket_index].request.requestLine.lang);
+	}
+
+	file = fopen(fileName, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[404];
+	}
+	else
+	{
+		response->statusLine.status = status[200];
+	}
+}
+
+void Get(int socket_index, Response* response)
+{
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	FILE* file = nullptr;
+	findFileAndSetStatus(socket_index, response, file, filePath);
+	fgets(response->body, MAX_LEN, file);
+	fclose(file);
+}
+
+void Put(int socket_index, Response* response)
 {
 	char filePath[MAX_LEN] = { "C:/temp/" };
 	FILE* file = nullptr;
 	strcat(filePath, sockets[socket_index].request.requestLine.uri);
-	if (sockets[socket_index].request.requestLine.lang != nullptr)
-	{
-		strcat(filePath, ".");
-		strcat(filePath, sockets[socket_index].request.requestLine.lang);
-	}
-
 	file = fopen(filePath, "r");
 	if (file == nullptr)
 	{
-		response.statusLine.status = status[404];
+		response->statusLine.status = status[201];
+	}
+	else //file exist
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
+	file = fopen(filePath, "w");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[501];
 	}
 	else
 	{
-		response.statusLine.status = status[200];
+		fputs(sockets[socket_index].request.body, file);
 	}
 
-	fgets(response.body, MAX_LEN, file);
 	fclose(file);
+}
+
+void Head(int socket_index, Response* response)
+{
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	FILE* file = nullptr;
+	findFileAndSetStatus(socket_index, response, file, filePath);
+	fclose(file);
+}
+
+void Trace(int socket_index, Response* response)
+{
+	//if(sockets[socket_index].request.body != nullptr)
+		//exeption?
+	strcpy(response->body, sockets[socket_index].buffer);
+	response->statusLine.status = status[200];
 }
 
 string GetTime()
@@ -379,90 +398,102 @@ string GetTime()
 	return (time_str.substr(0, time_str.length() - 1));
 }
 
-void createResponseHeader(Response response)
+void createResponseHeader(Response* response)
 {
 	char contentLength[MAX_LEN];
-	strcat(response.header, response.statusLine.version);
-	strcat(response.header, response.statusLine.status.c_str());
+	strcat(response->header, response->statusLine.version);
+	strcat(response->header, response->statusLine.status.c_str());
 	/*if (sockets[index].request == OPTIONS)
 	{
 		strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
 	}*/
-	strcat(response.header, "Server:Apache\r\n");
-	strcat(response.header, "Content-Type: text/html; charset=UTP-8\r\n");
-	strcat(response.header, "Connection: keep - alive\r\n");
+	strcat(response->header, "Server:Apache\r\n");
+	strcat(response->header, "Content-Type: text/html; charset=UTP-8\r\n");
+	strcat(response->header, "Connection: keep - alive\r\n");
 	string currTime = GetTime();
-	strcat(response.header, "Date:");
-	strcat(response.header, currTime.c_str());
-	strcat(response.header, "\r\n");
-	strcat(response.header, "Content-length:");
-	_itoa(strlen(response.body), contentLength, 10);
-	strcat(response.header, contentLength);
-	strcat(response.header, "\r\n\r\n");
+	strcat(response->header, "Date:");
+	strcat(response->header, currTime.c_str());
+	strcat(response->header, "\r\n");
+	strcat(response->header, "Content-length:");
+	_itoa(strlen(response->body), contentLength, 10);
+	strcat(response->header, contentLength);
+	strcat(response->header, "\r\n\r\n");
+}
+
+char* setRespondInBuffer(Response* response)
+{
+	char sendBuff[MAX_LEN];
+	strcat(sendBuff, response->statusLine.version);
+	strcat(sendBuff, response->statusLine.status.c_str());
+	strcat(sendBuff, "\r\n");
+	strcat(sendBuff, response->header);
+	strcat(sendBuff, response->body);
 }
 
 void sentResponse(int socket_index)
 {
 	Response response;
 	int bytesSent = 0;
-	char sendBuff[MAX_LEN];
 	SOCKET socket = sockets[socket_index].id;
 	
 	switch (sockets[socket_index].request.requestLine.method)
 	{
 	case GET:
-		get(socket_index, response);
+		Get(socket_index, &response);
 		break;
 	case POST:
 		//
 		break;
 	case PUT:
+		Put(socket_index, &response);
 		break;
 	case Delete:
+		//Delete_(socket_index, &response);
 		break;
 	case OPTIONS:
+		//Options(socket_index, &response);
 		break;
 	case TRACE:
+		Trace(socket_index, &response);
 		break;
 	case HEAD:
+		Head(socket_index, &response);
 		break;
 	}
 
-	createResponseHeader(response);
+	createResponseHeader(&response);
+	char* sendBuff = setRespondInBuffer(&response);
+	bytesSent = send(socket, sendBuff, (int)strlen(sendBuff), 0);
+	CheckMessage(bytesSent, socket, "send");
+	cout << "Time Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
+	sockets[socket_index].send = IDLE;//X --> fix: to check if the buffer contains more messages
 }
 
-//void sendMessage(int index)
-//{
-//	int bytesSent = 0;
-//	char sendBuff[255];
-//
-//	SOCKET msgSocket = sockets[index].id;
-//	if (sockets[index].sendSubType == SEND_TIME)
-//	{
-//		// Answer client's request by the current time string.
-//
-//		// Get the current time.
-//		time_t timer;
-//		time(&timer);
-//		// Parse the current time to printable string.
-//		strcpy(sendBuff, ctime(&timer));
-//		sendBuff[strlen(sendBuff) - 1] = 0; //to remove the new-line from the created string
-//	}
-//	else if (sockets[index].sendSubType == SEND_SECONDS)
-//	{
-//		// Answer client's request by the current time in seconds.
-//
-//		// Get the current time.
-//		time_t timer;
-//		time(&timer);
-//		// Convert the number to string.
-//		itoa((int)timer, sendBuff, 10);
-//	}
-//
-//	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
-//	checkMessage(bytesSent, msgSocket, "send");
-//
-//	cout << "Time Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
-//
-//	sockets[index].send = IDLE;//X --> fix: to check if the buffer contains more messages
-//}
+void main()
+{
+	WSAData wsaData = InitWinsock();
+	SOCKET listenSocket = CreateSocket();
+	sockaddr_in serverService = CreateSocketAdd(listenSocket);
+
+	if (SOCKET_ERROR == listen(listenSocket, 5))
+	{
+		cout << "Time Server: Error at listen(): " << WSAGetLastError() << endl;
+		closesocket(listenSocket);
+		WSACleanup();
+		return;
+	}
+	addSocket(listenSocket, LISTEN);
+
+	while (true)
+	{
+		fd_set waitRecv = createRecvSet();
+		fd_set waitSend = createSendSet();
+		int nfd = checkEvents(waitRecv, waitSend);
+		handleEvents(nfd, waitRecv, waitSend);
+	}
+
+	// Closing connections and Winsock.
+	cout << "Time Server: Closing Connection.\n";
+	closesocket(listenSocket);
+	WSACleanup();
+}
