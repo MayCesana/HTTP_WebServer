@@ -35,7 +35,7 @@ sockaddr_in CreateSocketAdd(SOCKET& m_socket)
 	sockaddr_in serverService;
 	serverService.sin_family = AF_INET;
 	serverService.sin_addr.s_addr = INADDR_ANY;
-	serverService.sin_port = htons(TIME_PORT);
+	serverService.sin_port = htons(PORT);
 
 	if (SOCKET_ERROR == bind(m_socket, (SOCKADDR*)&serverService, sizeof(serverService)))
 	{
@@ -232,9 +232,6 @@ void receiveMessage(int index)
 	else
 	{
 		getRequestFromBuffer(index);
-		printf("%s %s %s %s %s", sockets[index].request.requestLine.method,
-			sockets[index].request.requestLine.uri, sockets[index].request.requestLine.lang, sockets[index].request.reqHeader,
-			sockets[index].request.reqBody);
 	}
 }
 
@@ -257,7 +254,7 @@ void getRequestFromBuffer(int socket_index)
 		}
 		else if (strtok_count == bodyIndex)
 		{
-			sockets[socket_index].request.reqBody = token;
+			sockets[socket_index].request.body = token;
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
@@ -348,21 +345,90 @@ bool containsParams(char* request)
 	return false;
 }
 
-void get()
+void get(int socket_index, Response& response)
 {
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	FILE* file = nullptr;
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+	if (sockets[socket_index].request.requestLine.lang != nullptr)
+	{
+		strcat(filePath, ".");
+		strcat(filePath, sockets[socket_index].request.requestLine.lang);
+	}
 
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response.statusLine.status = status[404];
+	}
+	else
+	{
+		response.statusLine.status = status[200];
+	}
+
+	fgets(response.body, MAX_LEN, file);
+	fclose(file);
+}
+
+string GetTime()
+{
+	time_t timer;
+	string time_str;
+	time(&timer);
+	time_str = ctime(&timer);
+	return (time_str.substr(0, time_str.length() - 1));
+}
+
+void createResponseHeader(Response response)
+{
+	char contentLength[MAX_LEN];
+	strcat(response.header, response.statusLine.version);
+	strcat(response.header, response.statusLine.status.c_str());
+	/*if (sockets[index].request == OPTIONS)
+	{
+		strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
+	}*/
+	strcat(response.header, "Server:Apache\r\n");
+	strcat(response.header, "Content-Type: text/html; charset=UTP-8\r\n");
+	strcat(response.header, "Connection: keep - alive\r\n");
+	string currTime = GetTime();
+	strcat(response.header, "Date:");
+	strcat(response.header, currTime.c_str());
+	strcat(response.header, "\r\n");
+	strcat(response.header, "Content-length:");
+	_itoa(strlen(response.body), contentLength, 10);
+	strcat(response.header, contentLength);
+	strcat(response.header, "\r\n\r\n");
 }
 
 void sentResponse(int socket_index)
 {
+	Response response;
 	int bytesSent = 0;
 	char sendBuff[MAX_LEN];
 	SOCKET socket = sockets[socket_index].id;
 	
 	switch (sockets[socket_index].request.requestLine.method)
 	{
-
+	case GET:
+		get(socket_index, response);
+		break;
+	case POST:
+		//
+		break;
+	case PUT:
+		break;
+	case Delete:
+		break;
+	case OPTIONS:
+		break;
+	case TRACE:
+		break;
+	case HEAD:
+		break;
 	}
+
+	createResponseHeader(response);
 }
 
 //void sendMessage(int index)
