@@ -29,29 +29,29 @@ map<int, string> status = { {200, "200 OK\n"}, {201,"201 Created\n"}, {204,"204 
 typedef struct requestLine
 {
 	Method method;
-	char* uri;
-	char* lang = nullptr;
+	char uri[255];
+	char lang[3];
 	const char* version = HTTP_VERSION;
 }RequestLine;
 
 typedef struct request
 {
 	RequestLine requestLine;
-	char* header;
-	char* body;
+	char header[MAX_LEN];
+	char body[MAX_LEN];
 }Request;
 
 typedef struct responseLine
 {
-	const char* version = HTTP_VERSION;
+	char* version = (char*)HTTP_VERSION;
 	string status;
 }ResponseLine;
 
 typedef struct response 
 {
 	ResponseLine statusLine;
-	char* header;
-	char* body = nullptr;
+	char header[MAX_LEN];
+	char body[MAX_LEN];
 }Response;
 
 struct SocketState
@@ -73,7 +73,7 @@ void acceptConnection(int index);
 fd_set createRecvSet();
 fd_set createSendSet();
 void receiveMessage(int index);
-void sentResponse(int socket_index);
+void sendMessage(int socket_index);
 WSAData InitWinsock();
 SOCKET CreateSocket(); 
 sockaddr_in CreateSocketAdd(SOCKET& m_socket);

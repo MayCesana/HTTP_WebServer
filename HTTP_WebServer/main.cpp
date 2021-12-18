@@ -92,17 +92,17 @@ int checkEvents(fd_set waitRecv, fd_set waitSend)
 	{
 		cout << "Time Server: Error at select(): " << WSAGetLastError() << endl;
 		WSACleanup();
-		return;
+		exit(1);
 	}
 
 	return nfd;
 }
 
-void handleEvents(int nfd, fd_set waitRecv, fd_set waitSend)
+void handleEvents(int nfd, fd_set* waitRecv, fd_set* waitSend)
 {
 	for (int i = 0; i < MAX_SOCKETS && nfd > 0; i++)
 	{
-		if (FD_ISSET(sockets[i].id, &waitRecv))
+		if (FD_ISSET(sockets[i].id, waitRecv))
 		{
 			nfd--;
 			switch (sockets[i].recv)
@@ -120,13 +120,13 @@ void handleEvents(int nfd, fd_set waitRecv, fd_set waitSend)
 
 	for (int i = 0; i < MAX_SOCKETS && nfd > 0; i++)
 	{
-		if (FD_ISSET(sockets[i].id, &waitSend))
+		if (FD_ISSET(sockets[i].id, waitSend))
 		{
 			nfd--;
 			switch (sockets[i].send)
 			{
 			case SEND:
-				//sendMessage(i);
+				sendMessage(i);
 				break;
 			}
 		}
@@ -144,6 +144,12 @@ bool addSocket(SOCKET id, int what)
 			sockets[i].send = IDLE;
 			sockets[i].len = 0;
 			socketsCount++;
+			// Set the socket to be in non-blocking mode.
+			unsigned long flag = 1;
+			if (ioctlsocket(id, FIONBIO, &flag) != 0) //make the socket non-blocking
+			{
+				cout << "Time Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
+			}
 			return (true);
 		}
 	}
@@ -171,14 +177,6 @@ void acceptConnection(int index)
 	}
 	cout << "Time Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
 
-	//
-	// Set the socket to be in non-blocking mode.
-	unsigned long flag = 1;
-	if (ioctlsocket(msgSocket, FIONBIO, &flag) != 0) //make the socket non-blocking
-	{
-		cout << "Time Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
-	}
-
 	if (addSocket(msgSocket, RECEIVE) == false)
 	{
 		cout << "\t\tToo many connections, dropped!\n";
@@ -203,6 +201,7 @@ void receiveMessage(int index)
 	else
 	{
 		getRequestFromBuffer(index);
+		sockets[index].send = SEND;
 	}
 }
 
@@ -225,7 +224,7 @@ void getRequestFromBuffer(int socket_index)
 		}
 		else if (strtok_count == bodyIndex)
 		{
-			sockets[socket_index].request.body = token;
+			strcpy(sockets[socket_index].request.body, token);
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
@@ -291,11 +290,12 @@ void getRequestLine(int socket_index, char* requestLine)
 		}
 		else if (strtok_count == 1)
 		{
-			sockets[socket_index].request.requestLine.uri = token;
+			strcpy(sockets[socket_index].request.requestLine.uri, token);
 		}
 		else if (strtok_count > 2 && isContainsParam) 
 		{
-			sockets[socket_index].request.requestLine.lang = token;
+			strcpy(sockets[socket_index].request.requestLine.lang, token);
+			break;
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
@@ -316,16 +316,25 @@ bool containsParams(char* request)
 	return false;
 }
 
-void findFileAndSetStatus(int socket_index, Response* response, FILE* file, char* fileName)
+char* createFilePath(int socket_index)
 {
+	char fileName[MAX_LEN] = { "C:/TEMP/" };
 	strcat(fileName, sockets[socket_index].request.requestLine.uri);
 	if (sockets[socket_index].request.requestLine.lang != nullptr)
 	{
 		strcat(fileName, ".");
 		strcat(fileName, sockets[socket_index].request.requestLine.lang);
 	}
+	strcat(fileName, ".txt");
+	return fileName;
+}
 
-	file = fopen(fileName, "r");
+void Get(int socket_index, Response* response)
+{
+	char* filePath = createFilePath(socket_index);
+	FILE* file = nullptr;
+
+	file = fopen(filePath, "r");
 	if (file == nullptr)
 	{
 		response->statusLine.status = status[404];
@@ -333,16 +342,9 @@ void findFileAndSetStatus(int socket_index, Response* response, FILE* file, char
 	else
 	{
 		response->statusLine.status = status[200];
+		fgets(response->body, MAX_LEN, file);
+		fclose(file);
 	}
-}
-
-void Get(int socket_index, Response* response)
-{
-	char filePath[MAX_LEN] = { "C:/temp/" };
-	FILE* file = nullptr;
-	findFileAndSetStatus(socket_index, response, file, filePath);
-	fgets(response->body, MAX_LEN, file);
-	fclose(file);
 }
 
 void Put(int socket_index, Response* response)
@@ -368,17 +370,27 @@ void Put(int socket_index, Response* response)
 	else
 	{
 		fputs(sockets[socket_index].request.body, file);
+		fclose(file);
 	}
 
-	fclose(file);
+
 }
 
 void Head(int socket_index, Response* response)
 {
-	char filePath[MAX_LEN] = { "C:/temp/" };
+	char* filePath = createFilePath(socket_index);
 	FILE* file = nullptr;
-	findFileAndSetStatus(socket_index, response, file, filePath);
-	fclose(file);
+
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[404];
+	}
+	else
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
 }
 
 void Trace(int socket_index, Response* response)
@@ -401,6 +413,7 @@ string GetTime()
 void createResponseHeader(Response* response)
 {
 	char contentLength[MAX_LEN];
+	
 	strcat(response->header, response->statusLine.version);
 	strcat(response->header, response->statusLine.status.c_str());
 	/*if (sockets[index].request == OPTIONS)
@@ -428,9 +441,11 @@ char* setRespondInBuffer(Response* response)
 	strcat(sendBuff, "\r\n");
 	strcat(sendBuff, response->header);
 	strcat(sendBuff, response->body);
+
+	return sendBuff;
 }
 
-void sentResponse(int socket_index)
+void sendMessage(int socket_index)
 {
 	Response response;
 	int bytesSent = 0;
@@ -486,10 +501,32 @@ void main()
 
 	while (true)
 	{
-		fd_set waitRecv = createRecvSet();
-		fd_set waitSend = createSendSet();
-		int nfd = checkEvents(waitRecv, waitSend);
-		handleEvents(nfd, waitRecv, waitSend);
+		fd_set waitRecv;
+		FD_ZERO(&waitRecv);
+		for (int i = 0; i < MAX_SOCKETS; i++)
+		{
+			if ((sockets[i].recv == LISTEN) || (sockets[i].recv == RECEIVE))
+				FD_SET(sockets[i].id, &waitRecv);
+		}
+
+		fd_set waitSend;
+		FD_ZERO(&waitSend);
+		for (int i = 0; i < MAX_SOCKETS; i++)
+		{
+			if (sockets[i].send == SEND)
+				FD_SET(sockets[i].id, &waitSend);
+		}
+		//int nfd = checkEvents(waitRecv, waitSend);
+		// Wait for interesting event.
+		int nfd;
+		nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
+		if (nfd == SOCKET_ERROR)
+		{
+			cout << "Time Server: Error at select(): " << WSAGetLastError() << endl;
+			WSACleanup();
+			return;
+		}
+		handleEvents(nfd, &waitRecv, &waitSend);
 	}
 
 	// Closing connections and Winsock.
