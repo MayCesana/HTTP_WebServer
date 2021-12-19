@@ -1,9 +1,20 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include "Header.h"
+#include "functions.h"
 
 using namespace std;
-//
+
+void CheckMessage(int bytes, SOCKET& socket, const char* ErrorType)
+{
+	if (SOCKET_ERROR == bytes)
+	{
+		cout << "Web Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
+		closesocket(socket);
+		WSACleanup();
+		return;
+	}
+}
+
 WSAData InitWinsock()
 {
 	WSAData wsaData;
@@ -48,15 +59,131 @@ sockaddr_in CreateSocketAdd(SOCKET& m_socket)
 	return serverService;
 }
 
-void CheckMessage(int bytes, SOCKET& socket, const char* ErrorType)
+char* createFilePath(int socket_index)
 {
-	if (SOCKET_ERROR == bytes)
+	char fileName[MAX_LEN] = { "C:/TEMP/" };
+	strcat(fileName, sockets[socket_index].request.requestLine.uri);
+	if (sockets[socket_index].request.requestLine.lang[0] != '\0')
 	{
-		cout << "Web Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
-		closesocket(socket);
-		WSACleanup();
-		return;
+		strcat(fileName, ".");
+		strcat(fileName, sockets[socket_index].request.requestLine.lang);
 	}
+	strcat(fileName, ".txt");
+	return fileName;
+}
+
+void Get(int socket_index, Response* response)
+{
+	char* filePath = createFilePath(socket_index);
+	char bodyBuff[MAX_LEN];
+	FILE* file = nullptr;
+
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[404];
+	}
+	else
+	{
+		response->statusLine.status = status[200];
+		fgets(bodyBuff, MAX_LEN, file);
+		response->body.append(bodyBuff);
+		fclose(file);
+	}
+}
+
+void Post(int socket_index, Response& response)
+{
+	cout << sockets[socket_index].request.body << endl;
+	response.statusLine.status = status[200];
+}
+
+void Delete_func(int socket_index, Response& response)
+{
+	int deletedSucceed;
+
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+
+	deletedSucceed = remove(filePath);
+
+	if (deletedSucceed == 0)
+	{
+		response.statusLine.status = status[200];
+	}
+	else
+	{
+		response.statusLine.status = status[404];
+	}
+}
+
+void Put(int socket_index, Response* response)
+{
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	FILE* file = nullptr;
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[201];
+	}
+	else //file exist
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
+	file = fopen(filePath, "w");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[501];
+	}
+	else
+	{
+		fputs((sockets[socket_index].request.body).c_str(), file);
+		fclose(file);
+	}
+
+
+}
+
+void Head(int socket_index, Response* response)
+{
+	char* filePath = createFilePath(socket_index);
+	FILE* file = nullptr;
+
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[404];
+	}
+	else
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
+}
+
+void Trace(int socket_index, Response* response)
+{
+	char temp[MAX_LEN];
+	strncpy(temp, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
+	response->body = temp;
+	response->statusLine.status = status[200];
+}
+
+string Options()
+{
+	string optionsStr;
+
+	for (int i = 0; i < NUM_OPTIONS; i++)
+	{
+		optionsStr += methods[i];
+		optionsStr += ", ";
+	}
+
+	optionsStr += "\n";
+
+	return optionsStr;
 }
 
 fd_set createRecvSet()
@@ -185,35 +312,63 @@ void acceptConnection(int index)
 	return;
 }
 
+void findFirstReqLen(int index)
+{
+	int i = 0;
+	while (sockets[index].buffer[i] != EndOfRequest)
+	{
+		i++;
+	}
+
+	sockets[index].request.requestLen = i;
+}
+
+int numberOfDigits(int number)
+{
+	int count = 0;
+	while (number > 0)
+	{
+		count++;
+		number /= 10;
+	}
+	return count;
+}
+
 void receiveMessage(int index)
 {
 	SOCKET msgSocket = sockets[index].id;
-	int len = sockets[index].len;
-	int bytesRecv = recv(msgSocket, &sockets[index].buffer[len], sizeof(sockets[index].buffer) - len, 0);
+	char tempBuff[MAX_LEN] = { "\0" };
+	time(&sockets[index].request.startTime); 
 
+	int bytesRecv = recv(msgSocket, tempBuff, sizeof(sockets[index].buffer) - sockets[index].len, 0);
 	CheckMessage(bytesRecv, msgSocket, "recv");
 	if (bytesRecv == 0)
 	{
 		closesocket(msgSocket);
 		removeSocket(index);
-		return;
+		exit(1);
 	}
-	else
-	{
-		getRequestFromBuffer(index);
-		sockets[index].send = SEND;
-	}
+	int reqLen = numberOfDigits(bytesRecv);
+	sockets[index].request.requestLen = reqLen;
+	strcat(sockets[index].buffer, tempBuff);
+	sockets[index].len += reqLen + 1;
+	sockets[index].buffer[sockets[index].len] = EndOfRequest;
+
+	findFirstReqLen(index);
+	getRequestFromBuffer(index);
+	sockets[index].send = SEND;
 }
 
 void getRequestFromBuffer(int socket_index)
 {
 	const char del[9] = "\r\n";
-	char buffer[MAX_LEN] = { "\0" };
+	char buffer[MAX_LEN];
 	char* token;
 	char* requestLine = nullptr;
 	int bodyIndex = 9, strtok_count = 0; //0=requestLine, 2=header, 3=body
 
-	strcpy(buffer, sockets[socket_index].buffer);
+	strncpy(buffer, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
+	buffer[sockets[socket_index].request.requestLen] = '\0';
 	token = strtok(buffer, del);
 
 	while (token != nullptr)
@@ -224,7 +379,7 @@ void getRequestFromBuffer(int socket_index)
 		}
 		else if (strtok_count == bodyIndex)
 		{
-			strcpy(sockets[socket_index].request.body, token);
+			sockets[socket_index].request.body = token;
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
@@ -280,133 +435,6 @@ bool containsParams(char* request)
 	return false;
 }
 
-char* createFilePath(int socket_index)
-{
-	char fileName[MAX_LEN] = { "C:/TEMP/" };
-	strcat(fileName, sockets[socket_index].request.requestLine.uri);
-	if (sockets[socket_index].request.requestLine.lang != nullptr)
-	{
-		strcat(fileName, ".");
-		strcat(fileName, sockets[socket_index].request.requestLine.lang);
-	}
-	strcat(fileName, ".txt");
-	return fileName;
-}
-
-void Get(int socket_index, Response* response)
-{
-	char* filePath = createFilePath(socket_index);
-	char bodyBuff[MAX_LEN];
-	FILE* file = nullptr;
-
-	file = fopen(filePath, "r");
-	if (file == nullptr)
-	{
-		response->statusLine.status = status[404];
-	}
-	else
-	{
-		response->statusLine.status = status[200];
-		fgets(bodyBuff, MAX_LEN, file);
-		response->body.append(bodyBuff);
-		fclose(file);
-	}
-}
-
-void Post(int socket_index, Response& response)
-{
-	cout << sockets[socket_index].request.body << endl;
-	response.statusLine.status = status[200];
-}
-
-void Delete_func(int socket_index, Response& response)
-{
-	int deletedSucceed;
-
-	char filePath[MAX_LEN] = { "C:/temp/" };
-	strcat(filePath, sockets[socket_index].request.requestLine.uri);
-
-	deletedSucceed = remove(filePath);
-
-	if (deletedSucceed == 0)
-	{
-		response.statusLine.status = status[200];
-	}
-	else
-	{
-		response.statusLine.status = status[404];
-	}
-}
-
-void Put(int socket_index, Response* response)
-{
-	char filePath[MAX_LEN] = { "C:/temp/" };
-	FILE* file = nullptr;
-	strcat(filePath, sockets[socket_index].request.requestLine.uri);
-	file = fopen(filePath, "r");
-	if (file == nullptr)
-	{
-		response->statusLine.status = status[201];
-	}
-	else //file exist
-	{
-		response->statusLine.status = status[200];
-		fclose(file);
-	}
-	file = fopen(filePath, "w");
-	if (file == nullptr)
-	{
-		response->statusLine.status = status[501];
-	}
-	else
-	{
-		fputs(sockets[socket_index].request.body, file);
-		fclose(file);
-	}
-
-
-}
-
-void Head(int socket_index, Response* response)
-{
-	char* filePath = createFilePath(socket_index);
-	FILE* file = nullptr;
-
-	file = fopen(filePath, "r");
-	if (file == nullptr)
-	{
-		response->statusLine.status = status[404];
-	}
-	else
-	{
-		response->statusLine.status = status[200];
-		fclose(file);
-	}
-}
-
-void Trace(int socket_index, Response* response)
-{
-	//if(sockets[socket_index].request.body != nullptr)
-		//exeption?
-	response->body = sockets[socket_index].buffer;
-	response->statusLine.status = status[200];
-}
-
-string Options()
-{
-	string optionsStr;
-
-	for (int i = 0; i < NUM_OPTIONS; i++)
-	{
-		optionsStr += methods[i];
-		optionsStr += ", ";
-	}
-
-	optionsStr += "\n";
-
-	return optionsStr;
-}
-
 string GetTime()
 {
 	time_t timer;
@@ -445,47 +473,99 @@ string setRespondInBuffer(Response* response)
 	return sendBuff;
 }
 
+void deleteReqFromBuffer(int index)
+{
+	int reqLen = sockets[index].request.requestLen;
+	if (sockets[index].request.requestLen <= sockets[index].len)
+	{
+		sockets[index].buffer[0] = '\0';
+	}
+	else 
+	{
+		memcpy(sockets[index].buffer, sockets[index].buffer + reqLen + 1, sockets[index].len - reqLen);
+	}
+	sockets[index].len -= reqLen - 1; 
+} 
+
+void clearCurrRequest(int index)
+{
+	sockets[index].request.body.clear();
+	sockets[index].request.header.clear();
+	sockets[index].request.requestLen = 0;
+	sockets[index].request.requestLine.lang[0] = '\0';
+	sockets[index].request.requestLine.uri[0] = '\0';
+}
+
+response createTimeOutResponse(int socket_index)
+{
+	response newResponse;
+	newResponse.statusLine.status = status[408];
+	newResponse.body.clear();
+	createResponseHeader(&newResponse, socket_index);
+	return newResponse;
+}
+
 void sendMessage(int socket_index)
 {
 	Response response; 
 	char sendBuffer[MAX_LEN];
 	int bytesSent = 0;
 	SOCKET socket = sockets[socket_index].id;
-	
-	string method = sockets[socket_index].request.requestLine.method;
+	time_t currTime;
 
-	if (method == "GET")
+	if (difftime(time(&currTime), sockets[socket_index].request.startTime) > TIMEOUT)
 	{
-		Get(socket_index, &response);
+		response = createTimeOutResponse(socket_index);
+		removeSocket(socket_index);
 	}
-	else if (method == "POST")
+	else
 	{
-		Post(socket_index, response);
-	}
-	else if (method == "PUT")
-	{
-		Put(socket_index, &response);
-	}
-	else if (method == "DELETE")
-	{
-		Delete_func(socket_index, response);
-	}
-	else if (method == "OPTION")
-	{
-		response.statusLine.status = status[200];
-	}
-	else if (method == "TREACE")
-	{
-		Trace(socket_index, &response);
+		string method = sockets[socket_index].request.requestLine.method;
+
+		if (method == "GET")
+		{
+			Get(socket_index, &response);
+		}
+		else if (method == "POST")
+		{
+			Post(socket_index, response);
+		}
+		else if (method == "PUT")
+		{
+			Put(socket_index, &response);
+		}
+		else if (method == "DELETE")
+		{
+			Delete_func(socket_index, response);
+		}
+		else if (method == "OPTION")
+		{
+			response.statusLine.status = status[200];
+		}
+		else if (method == "TREACE")
+		{
+			Trace(socket_index, &response);
+		}
+
+		createResponseHeader(&response, socket_index);
 	}
 
-	createResponseHeader(&response, socket_index);
 	string sendBuff = setRespondInBuffer(&response);
 	strcpy(sendBuffer,sendBuff.c_str());
 	bytesSent = send(socket, sendBuffer, (int)strlen(sendBuffer), 0);
 	CheckMessage(bytesSent, socket, "send");
 	cout << "Web Server: Sent: " << bytesSent << "\\" << strlen(sendBuffer) << " bytes\n";
-	sockets[socket_index].send = IDLE;//X --> fix: to check if the buffer contains more messages
+	deleteReqFromBuffer(socket_index);
+	clearCurrRequest(socket_index);
+
+	if (sockets[socket_index].len == 0)
+	{
+		sockets[socket_index].send = IDLE;
+	}
+	else
+	{
+		sockets[socket_index].send = SEND;
+	}
 }
 
 void main()
