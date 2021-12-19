@@ -10,7 +10,7 @@ WSAData InitWinsock()
 
 	if (NO_ERROR != WSAStartup(MAKEWORD(2, 2), &wsaData))
 	{
-		cout << "Time Server: Error at WSAStartup()\n";
+		cout << "Web Server: Error at WSAStartup()\n";
 		exit(0);
 	}
 
@@ -22,7 +22,7 @@ SOCKET CreateSocket()
 	SOCKET listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (INVALID_SOCKET == listen_socket)
 	{
-		cout << "Time Server: Error at socket(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at socket(): " << WSAGetLastError() << endl;
 		WSACleanup();
 		exit(0);
 	}
@@ -39,7 +39,7 @@ sockaddr_in CreateSocketAdd(SOCKET& m_socket)
 
 	if (SOCKET_ERROR == bind(m_socket, (SOCKADDR*)&serverService, sizeof(serverService)))
 	{
-		cout << "Time Server: Error at bind(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at bind(): " << WSAGetLastError() << endl;
 		closesocket(m_socket);
 		WSACleanup();
 		exit(0);
@@ -52,7 +52,7 @@ void CheckMessage(int bytes, SOCKET& socket, const char* ErrorType)
 {
 	if (SOCKET_ERROR == bytes)
 	{
-		cout << "Time Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
 		closesocket(socket);
 		WSACleanup();
 		return;
@@ -84,13 +84,13 @@ fd_set createSendSet()
 	return set;
 }
 
-int checkEvents(fd_set waitRecv, fd_set waitSend)
+int checkEvents(fd_set* waitRecv, fd_set* waitSend)
 {
 	// Wait for interesting event.
-	int nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
+	int nfd = select(0, waitRecv, waitSend, NULL, NULL);
 	if (nfd == SOCKET_ERROR)
 	{
-		cout << "Time Server: Error at select(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at select(): " << WSAGetLastError() << endl;
 		WSACleanup();
 		exit(1);
 	}
@@ -148,7 +148,7 @@ bool addSocket(SOCKET id, int what)
 			unsigned long flag = 1;
 			if (ioctlsocket(id, FIONBIO, &flag) != 0) //make the socket non-blocking
 			{
-				cout << "Time Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
+				cout << "Web Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
 			}
 			return (true);
 		}
@@ -172,10 +172,10 @@ void acceptConnection(int index)
 	SOCKET msgSocket = accept(id, (struct sockaddr*)&from, &fromLen);
 	if (INVALID_SOCKET == msgSocket)
 	{
-		cout << "Time Server: Error at accept(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at accept(): " << WSAGetLastError() << endl;
 		return;
 	}
-	cout << "Time Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
+	cout << "Web Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
 
 	if (addSocket(msgSocket, RECEIVE) == false)
 	{
@@ -233,42 +233,6 @@ void getRequestFromBuffer(int socket_index)
 	getRequestLine(socket_index, requestLine);
 }
 
-void setMethod(int socket_index)
-{
-	if (strncmp(sockets[socket_index].buffer, "GET", 3) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = GET;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "POST", 4) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = POST;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "PUT", 3) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = PUT;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "DELETE", 6) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = Delete;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "HEAD", 4) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = HEAD;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "OPTIONS", 7) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = OPTIONS;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "TRACE", 5) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = TRACE;
-	}
-	else
-	{
-		//exception
-	}
-}
-
 void getRequestLine(int socket_index, char* requestLine)
 {
 	const char del[5] = "?=/ ";
@@ -286,7 +250,7 @@ void getRequestLine(int socket_index, char* requestLine)
 	{
 		if (strtok_count == 0)
 		{
-			setMethod(socket_index);
+			sockets[socket_index].request.requestLine.method = token;
 		}
 		else if (strtok_count == 1)
 		{
@@ -332,6 +296,7 @@ char* createFilePath(int socket_index)
 void Get(int socket_index, Response* response)
 {
 	char* filePath = createFilePath(socket_index);
+	char bodyBuff[MAX_LEN];
 	FILE* file = nullptr;
 
 	file = fopen(filePath, "r");
@@ -342,8 +307,34 @@ void Get(int socket_index, Response* response)
 	else
 	{
 		response->statusLine.status = status[200];
-		fgets(response->body, MAX_LEN, file);
+		fgets(bodyBuff, MAX_LEN, file);
+		response->body.append(bodyBuff);
 		fclose(file);
+	}
+}
+
+void Post(int socket_index, Response& response)
+{
+	cout << sockets[socket_index].request.body << endl;
+	response.statusLine.status = status[200];
+}
+
+void Delete_func(int socket_index, Response& response)
+{
+	int deletedSucceed;
+
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+
+	deletedSucceed = remove(filePath);
+
+	if (deletedSucceed == 0)
+	{
+		response.statusLine.status = status[200];
+	}
+	else
+	{
+		response.statusLine.status = status[404];
 	}
 }
 
@@ -397,7 +388,7 @@ void Trace(int socket_index, Response* response)
 {
 	//if(sockets[socket_index].request.body != nullptr)
 		//exeption?
-	strcpy(response->body, sockets[socket_index].buffer);
+	response->body = sockets[socket_index].buffer;
 	response->statusLine.status = status[200];
 }
 
@@ -412,75 +403,71 @@ string GetTime()
 
 void createResponseHeader(Response* response)
 {
-	char contentLength[MAX_LEN];
-	
-	strcat(response->header, response->statusLine.version);
-	strcat(response->header, response->statusLine.status.c_str());
-	/*if (sockets[index].request == OPTIONS)
-	{
-		strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
-	}*/
-	strcat(response->header, "Server:Apache\r\n");
-	strcat(response->header, "Content-Type: text/html; charset=UTP-8\r\n");
-	strcat(response->header, "Connection: keep - alive\r\n");
+	string contentLength;
+	response->header.append(response->statusLine.version);
+	response->header.append(response->statusLine.status);
+	//if (sockets[index].request == OPTIONS)
+	//{
+	//	strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
+	//}
+	response->header.append("Server:Apache\r\n");
+	response->header.append("Connection: keep - alive\r\n");
+	response->header.append("Connection: keep - alive\r\n");
 	string currTime = GetTime();
-	strcat(response->header, "Date:");
-	strcat(response->header, currTime.c_str());
-	strcat(response->header, "\r\n");
-	strcat(response->header, "Content-length:");
-	_itoa(strlen(response->body), contentLength, 10);
-	strcat(response->header, contentLength);
-	strcat(response->header, "\r\n\r\n");
+	response->header.append("Date:");
+	response->header.append(currTime + "\r\n" + "Content-length:");
+	contentLength = to_string(response->body.length());
+	response->header.append(contentLength + "\r\n\r\n");
 }
 
-char* setRespondInBuffer(Response* response)
+string setRespondInBuffer(Response* response)
 {
-	char sendBuff[MAX_LEN];
-	strcat(sendBuff, response->statusLine.version);
-	strcat(sendBuff, response->statusLine.status.c_str());
-	strcat(sendBuff, "\r\n");
-	strcat(sendBuff, response->header);
-	strcat(sendBuff, response->body);
+	string sendBuff = { response->statusLine.version + response->statusLine.status + "\r\n" + response->header
+	+ response->body };
 
 	return sendBuff;
 }
 
 void sendMessage(int socket_index)
 {
-	Response response;
+	Response response; 
+	char sendBuffer[MAX_LEN];
 	int bytesSent = 0;
 	SOCKET socket = sockets[socket_index].id;
 	
-	switch (sockets[socket_index].request.requestLine.method)
+	string method = sockets[socket_index].request.requestLine.method;
+
+	if (method == "GET")
 	{
-	case GET:
 		Get(socket_index, &response);
-		break;
-	case POST:
-		//
-		break;
-	case PUT:
+	}
+	else if (method == "POST")
+	{
+		Post(socket_index, response);
+	}
+	else if (method == "PUT")
+	{
 		Put(socket_index, &response);
-		break;
-	case Delete:
-		//Delete_(socket_index, &response);
-		break;
-	case OPTIONS:
-		//Options(socket_index, &response);
-		break;
-	case TRACE:
+	}
+	else if (method == "DELETE")
+	{
+		Delete_func(socket_index, response);
+	}
+	else if (method == "OPTION")
+	{
+		//
+	}
+	else if (method == "TREACE")
+	{
 		Trace(socket_index, &response);
-		break;
-	case HEAD:
-		Head(socket_index, &response);
-		break;
 	}
 
 	createResponseHeader(&response);
-	char* sendBuff = setRespondInBuffer(&response);
-	bytesSent = send(socket, sendBuff, (int)strlen(sendBuff), 0);
+	string sendBuff = setRespondInBuffer(&response);
+	strcpy(sendBuffer,sendBuff.c_str());
+	bytesSent = send(socket, sendBuffer, (int)strlen(sendBuffer), 0);
 	CheckMessage(bytesSent, socket, "send");
-	cout << "Time Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
+	cout << "Web Server: Sent: " << bytesSent << "\\" << strlen(sendBuffer) << " bytes\n";
 	sockets[socket_index].send = IDLE;//X --> fix: to check if the buffer contains more messages
 }
 
@@ -492,7 +479,7 @@ void main()
 
 	if (SOCKET_ERROR == listen(listenSocket, 5))
 	{
-		cout << "Time Server: Error at listen(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at listen(): " << WSAGetLastError() << endl;
 		closesocket(listenSocket);
 		WSACleanup();
 		return;
@@ -501,36 +488,15 @@ void main()
 
 	while (true)
 	{
-		fd_set waitRecv;
-		FD_ZERO(&waitRecv);
-		for (int i = 0; i < MAX_SOCKETS; i++)
-		{
-			if ((sockets[i].recv == LISTEN) || (sockets[i].recv == RECEIVE))
-				FD_SET(sockets[i].id, &waitRecv);
-		}
+		fd_set waitRecv = createRecvSet();
+		fd_set waitSend = createSendSet();
 
-		fd_set waitSend;
-		FD_ZERO(&waitSend);
-		for (int i = 0; i < MAX_SOCKETS; i++)
-		{
-			if (sockets[i].send == SEND)
-				FD_SET(sockets[i].id, &waitSend);
-		}
-		//int nfd = checkEvents(waitRecv, waitSend);
-		// Wait for interesting event.
-		int nfd;
-		nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
-		if (nfd == SOCKET_ERROR)
-		{
-			cout << "Time Server: Error at select(): " << WSAGetLastError() << endl;
-			WSACleanup();
-			return;
-		}
+		int nfd = checkEvents(&waitRecv, &waitSend);
 		handleEvents(nfd, &waitRecv, &waitSend);
 	}
 
 	// Closing connections and Winsock.
-	cout << "Time Server: Closing Connection.\n";
+	cout << "Web Server: Closing Connection.\n";
 	closesocket(listenSocket);
 	WSACleanup();
 }
