@@ -4,6 +4,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
 #include <string.h>
+#include <list>
 
 using namespace std;
 
@@ -17,7 +18,9 @@ const int RECEIVE = 2;
 const int IDLE = 3;
 const int SEND = 4;
 
-enum Method { OPTIONS, GET, HEAD, POST, PUT, Delete, TRACE};
+#define NUM_OPTIONS 7
+
+const char* methods[NUM_OPTIONS] = { "OPTIONS", "GET", "HEAD", "POST", "PUT", "Delete", "TRACE" };
 
 map<int, string> status = { {200, "200 OK\n"}, {201,"201 Created\n"}, {204,"204 NO CONTENT\n" }, { 401,"401 Unauthorized\n" },
 	{404,"404 NOT FOUND\n"},{408, "408 REQUEST TIMEOUT\n"},{411,"411 LENGTH REQUIRED\n"},{414, "Request-URI Too Large\n"},
@@ -28,7 +31,7 @@ map<int, string> status = { {200, "200 OK\n"}, {201,"201 Created\n"}, {204,"204 
 
 typedef struct requestLine
 {
-	Method method;
+	string method;
 	char* uri;
 	char* lang = nullptr;
 	const char* version = HTTP_VERSION;
@@ -80,3 +83,6 @@ sockaddr_in CreateSocketAdd(SOCKET& m_socket);
 bool containsParams(char* request);
 void getRequestLine(int socket_index, char* requestLine);
 void getRequestFromBuffer(int socket_index);
+void post(int socket_index, Response& response);
+void delete_func(int socket_index, Response& response);
+void options(int socket_index, Response& response);

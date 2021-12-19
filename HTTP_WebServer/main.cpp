@@ -267,31 +267,31 @@ void setMethod(int socket_index)
 {
 	if (strncmp(sockets[socket_index].buffer, "GET", 3) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = GET;
+		sockets[socket_index].request.requestLine.method = "GET";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "POST", 4) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = POST;
+		sockets[socket_index].request.requestLine.method = "POST";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "PUT", 3) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = PUT;
+		sockets[socket_index].request.requestLine.method = "PUT";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "DELETE", 6) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = Delete;
+		sockets[socket_index].request.requestLine.method = "Delete";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "HEAD", 4) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = HEAD;
+		sockets[socket_index].request.requestLine.method = "HEAD";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "OPTIONS", 7) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = OPTIONS;
+		sockets[socket_index].request.requestLine.method = "OPTIONS";
 	}
 	else if (strncmp(sockets[socket_index].buffer, "TRACE", 5) == 0)
 	{
-		sockets[socket_index].request.requestLine.method = TRACE;
+		sockets[socket_index].request.requestLine.method = "TRACE";
 	}
 	else
 	{
@@ -407,25 +407,33 @@ void sentResponse(int socket_index)
 	int bytesSent = 0;
 	char sendBuff[MAX_LEN];
 	SOCKET socket = sockets[socket_index].id;
-	
-	switch (sockets[socket_index].request.requestLine.method)
+	string method;
+
+	method = sockets[socket_index].request.requestLine.method;
+
+	if (method == "GET")
 	{
-	case GET:
 		get(socket_index, response);
-		break;
-	case POST:
-		//
-		break;
-	case PUT:
-		break;
-	case Delete:
-		break;
-	case OPTIONS:
-		break;
-	case TRACE:
-		break;
-	case HEAD:
-		break;
+	}
+	else if (method == "POST")
+	{
+		post(socket_index, response);
+	}
+	else if (method == "PUT")
+	{
+		//put
+	}
+	else if (method == "DELETE")
+	{
+		delete_func(socket_index, response);
+	}
+	else if (method == "OPTION")
+	{
+		options(socket_index, response);
+	}
+	else if (method == "TREACE")
+	{
+		//trace
 	}
 
 	createResponseHeader(response);
@@ -466,3 +474,44 @@ void sentResponse(int socket_index)
 //
 //	sockets[index].send = IDLE;//X --> fix: to check if the buffer contains more messages
 //}
+
+void post(int socket_index, Response& response)
+{
+	cout << sockets[socket_index].request.body << endl;
+	response.statusLine.status = status[200];
+}
+
+void delete_func(int socket_index, Response& response)
+{
+	int deletedSucceed;
+
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+
+	deletedSucceed = remove(filePath);
+
+	if (deletedSucceed == 0)
+	{
+		response.statusLine.status = status[200];
+	}
+	else
+	{
+		response.statusLine.status = status[404];
+	}
+}
+
+void options(int socket_index, Response& response)
+{
+	char optionsStr[255];
+
+	for (int i = 0; i < NUM_OPTIONS; i++)
+	{
+		strcat(optionsStr, methods[i]);
+		strcat(optionsStr, ", ");
+	}
+
+	strcat(optionsStr, "\n");
+
+	response.body = optionsStr;
+	response.statusLine.status = status[200];
+}
