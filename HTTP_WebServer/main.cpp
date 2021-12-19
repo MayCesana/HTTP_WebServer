@@ -392,6 +392,21 @@ void Trace(int socket_index, Response* response)
 	response->statusLine.status = status[200];
 }
 
+string Options()
+{
+	string optionsStr;
+
+	for (int i = 0; i < NUM_OPTIONS; i++)
+	{
+		optionsStr += methods[i];
+		optionsStr += ", ";
+	}
+
+	optionsStr += "\n";
+
+	return optionsStr;
+}
+
 string GetTime()
 {
 	time_t timer;
@@ -401,23 +416,25 @@ string GetTime()
 	return (time_str.substr(0, time_str.length() - 1));
 }
 
-void createResponseHeader(Response* response)
+void createResponseHeader(Response* response, int socket_index)
 {
-	string contentLength;
-	response->header.append(response->statusLine.version);
-	response->header.append(response->statusLine.status);
-	//if (sockets[index].request == OPTIONS)
-	//{
-	//	strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
-	//}
-	response->header.append("Server:Apache\r\n");
-	response->header.append("Connection: keep - alive\r\n");
-	response->header.append("Connection: keep - alive\r\n");
+	string contentLength =  "";
+	response->header += response->statusLine.version;
+	response->header += response->statusLine.status;
+	if (sockets[socket_index].request.requestLine.method == "OPTIONS")
+	{
+		response->header += "Allow: "; 
+		response->header += Options() + "\r\n";
+	}
+	response->header += "Server:Apache\r\n";
+	response->header += "Connection: keep - alive\r\n";
+	response->header += "Connection: keep - alive\r\n";
+
 	string currTime = GetTime();
-	response->header.append("Date:");
-	response->header.append(currTime + "\r\n" + "Content-length:");
+	response->header += "Date:";
+	response->header += currTime + "\r\n" + "Content-length:";
 	contentLength = to_string(response->body.length());
-	response->header.append(contentLength + "\r\n\r\n");
+	response->header += contentLength + "\r\n\r\n";
 }
 
 string setRespondInBuffer(Response* response)
@@ -455,14 +472,14 @@ void sendMessage(int socket_index)
 	}
 	else if (method == "OPTION")
 	{
-		//
+		response.statusLine.status = status[200];
 	}
 	else if (method == "TREACE")
 	{
 		Trace(socket_index, &response);
 	}
 
-	createResponseHeader(&response);
+	createResponseHeader(&response, socket_index);
 	string sendBuff = setRespondInBuffer(&response);
 	strcpy(sendBuffer,sendBuff.c_str());
 	bytesSent = send(socket, sendBuffer, (int)strlen(sendBuffer), 0);
