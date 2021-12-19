@@ -1,9 +1,11 @@
+
 #include <iostream>
 #include <string>
 #include <map>;
 #pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
 #include <string.h>
+#pragma once
 
 using namespace std;
 
@@ -16,9 +18,10 @@ const int LISTEN = 1;
 const int RECEIVE = 2;
 const int IDLE = 3;
 const int SEND = 4;
+const double TIMEOUT = 120;
 #define NUM_OPTIONS 7
+#define EndOfRequest '#'
 
-//enum Method { OPTIONS, GET, HEAD, POST, PUT, Delete, TRACE};
 string methods[NUM_OPTIONS] = { "OPTIONS", "GET", "HEAD", "POST", "PUT", "Delete", "TRACE" };
 
 map<int, string> status = { {200, "200 OK\n"}, {201,"201 Created\n"}, {204,"204 NO CONTENT\n" }, { 401,"401 Unauthorized\n" },
@@ -30,15 +33,17 @@ typedef struct requestLine
 {
 	string method;
 	char uri[255];
-	char lang[3];
+	char lang[3] = { "\0" };
 	const char* version = HTTP_VERSION;
 }RequestLine;
 
 typedef struct request
 {
 	RequestLine requestLine;
-	char header[MAX_LEN];
-	char body[MAX_LEN];
+	string header;
+	string body;
+	int requestLen;
+	time_t startTime; 
 }Request;
 
 typedef struct responseLine
@@ -60,23 +65,9 @@ struct SocketState
 	int	recv;			// Receiving?
 	int	send;			// Sending?
 	char buffer[MAX_LEN];
-	Request request;
+	Request request; //currentRequest
 	int len;
 };
 
 struct SocketState sockets[MAX_SOCKETS] = { 0 };
 int socketsCount = 0;
-
-bool addSocket(SOCKET id, int what); //add to array
-void removeSocket(int index); //removes from array
-void acceptConnection(int index);
-fd_set createRecvSet();
-fd_set createSendSet();
-void receiveMessage(int index);
-void sendMessage(int socket_index);
-WSAData InitWinsock();
-SOCKET CreateSocket(); 
-sockaddr_in CreateSocketAdd(SOCKET& m_socket);
-bool containsParams(char* request);
-void getRequestLine(int socket_index, char* requestLine);
-void getRequestFromBuffer(int socket_index);
