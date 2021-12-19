@@ -24,6 +24,7 @@
   <ItemGroup>
     <ClInclude Include="functions.h" />
     <ClInclude Include="Header.h" />
+    <ClInclude Include="SocketsState.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

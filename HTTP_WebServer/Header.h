@@ -1,7 +1,7 @@
-
 #include <iostream>
 #include <string>
-#include <map>;
+#include <map>
+#include <list>
 #pragma comment(lib, "Ws2_32.lib")
 #include <winsock2.h>
 #include <string.h>
@@ -20,7 +20,6 @@ const int IDLE = 3;
 const int SEND = 4;
 const double TIMEOUT = 120;
 #define NUM_OPTIONS 7
-#define EndOfRequest '#'
 
 string methods[NUM_OPTIONS] = { "OPTIONS", "GET", "HEAD", "POST", "PUT", "Delete", "TRACE" };
 
@@ -42,7 +41,7 @@ typedef struct request
 	RequestLine requestLine;
 	string header;
 	string body;
-	int requestLen;
+	int requestLen; //bytes
 	time_t startTime; 
 }Request;
 
@@ -64,8 +63,9 @@ struct SocketState
 	SOCKET id;			// Socket handle
 	int	recv;			// Receiving?
 	int	send;			// Sending?
-	char buffer[MAX_LEN];
-	Request request; //currentRequest
+	list<string> buffer; //list of received requests
+	//char buffer[MAX_LEN];
+	Request request; //currentRequest (head of the list)
 	int len;
 };
 

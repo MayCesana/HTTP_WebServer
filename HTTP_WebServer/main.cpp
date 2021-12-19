@@ -165,9 +165,9 @@ void Head(int socket_index, Response* response)
 
 void Trace(int socket_index, Response* response)
 {
-	char temp[MAX_LEN];
-	strncpy(temp, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
-	response->body = temp;
+	//char temp[MAX_LEN];
+	//strncpy(temp, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
+	response->body = sockets[socket_index].buffer.front();
 	response->statusLine.status = status[200];
 }
 
@@ -312,16 +312,16 @@ void acceptConnection(int index)
 	return;
 }
 
-void findFirstReqLen(int index)
-{
-	int i = 0;
-	while (sockets[index].buffer[i] != EndOfRequest)
-	{
-		i++;
-	}
-
-	sockets[index].request.requestLen = i;
-}
+//void findFirstReqLen(int index)
+//{
+//	int i = 0;
+//	while (sockets[index].buffer[i] != EndOfRequest)
+//	{
+//		i++;
+//	}
+//
+//	sockets[index].request.requestLen = i;
+//}
 
 int numberOfDigits(int number)
 {
@@ -339,8 +339,9 @@ void receiveMessage(int index)
 	SOCKET msgSocket = sockets[index].id;
 	char tempBuff[MAX_LEN] = { "\0" };
 	time(&sockets[index].request.startTime); 
+	int len = sockets[index].len;
 
-	int bytesRecv = recv(msgSocket, tempBuff, sizeof(sockets[index].buffer) - sockets[index].len, 0);
+	int bytesRecv = recv(msgSocket, tempBuff, sizeof(tempBuff) - len, 0);
 	CheckMessage(bytesRecv, msgSocket, "recv");
 	if (bytesRecv == 0)
 	{
@@ -348,13 +349,14 @@ void receiveMessage(int index)
 		removeSocket(index);
 		exit(1);
 	}
-	int reqLen = numberOfDigits(bytesRecv);
-	sockets[index].request.requestLen = reqLen;
-	strcat(sockets[index].buffer, tempBuff);
-	sockets[index].len += reqLen + 1;
-	sockets[index].buffer[sockets[index].len] = EndOfRequest;
+	//int reqLen = numberOfDigits(bytesRecv);
+	sockets[index].request.requestLen = bytesRecv;
+	sockets[index].buffer.push_back(tempBuff);
+	//strcat(sockets[index].buffer, tempBuff);
+	sockets[index].len += bytesRecv;
+	//sockets[index].buffer[sockets[index].len] = EndOfRequest;
 
-	findFirstReqLen(index);
+	//findFirstReqLen(index);
 	getRequestFromBuffer(index);
 	sockets[index].send = SEND;
 }
@@ -367,8 +369,9 @@ void getRequestFromBuffer(int socket_index)
 	char* requestLine = nullptr;
 	int bodyIndex = 9, strtok_count = 0; //0=requestLine, 2=header, 3=body
 
-	strncpy(buffer, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
-	buffer[sockets[socket_index].request.requestLen] = '\0';
+	//strncpy(buffer, sockets[socket_index].buffer, sockets[socket_index].request.requestLen);
+	//buffer[sockets[socket_index].request.requestLen] = '\0';
+	strcpy(buffer, sockets[socket_index].buffer.front().c_str());
 	token = strtok(buffer, del);
 
 	while (token != nullptr)
@@ -475,23 +478,17 @@ string setRespondInBuffer(Response* response)
 
 void deleteReqFromBuffer(int index)
 {
-	int reqLen = sockets[index].request.requestLen;
-	if (sockets[index].request.requestLen <= sockets[index].len)
+	if (!sockets[index].buffer.empty())
 	{
-		sockets[index].buffer[0] = '\0';
+		sockets[index].buffer.pop_front();
 	}
-	else 
-	{
-		memcpy(sockets[index].buffer, sockets[index].buffer + reqLen + 1, sockets[index].len - reqLen);
-	}
-	sockets[index].len -= reqLen - 1; 
+	sockets[index].len -= sockets[index].request.requestLen;
 } 
 
 void clearCurrRequest(int index)
 {
 	sockets[index].request.body.clear();
 	sockets[index].request.header.clear();
-	sockets[index].request.requestLen = 0;
 	sockets[index].request.requestLine.lang[0] = '\0';
 	sockets[index].request.requestLine.uri[0] = '\0';
 }
