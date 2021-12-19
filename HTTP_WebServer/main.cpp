@@ -10,7 +10,7 @@ WSAData InitWinsock()
 
 	if (NO_ERROR != WSAStartup(MAKEWORD(2, 2), &wsaData))
 	{
-		cout << "Time Server: Error at WSAStartup()\n";
+		cout << "Web Server: Error at WSAStartup()\n";
 		exit(0);
 	}
 
@@ -22,7 +22,7 @@ SOCKET CreateSocket()
 	SOCKET listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (INVALID_SOCKET == listen_socket)
 	{
-		cout << "Time Server: Error at socket(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at socket(): " << WSAGetLastError() << endl;
 		WSACleanup();
 		exit(0);
 	}
@@ -39,7 +39,7 @@ sockaddr_in CreateSocketAdd(SOCKET& m_socket)
 
 	if (SOCKET_ERROR == bind(m_socket, (SOCKADDR*)&serverService, sizeof(serverService)))
 	{
-		cout << "Time Server: Error at bind(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at bind(): " << WSAGetLastError() << endl;
 		closesocket(m_socket);
 		WSACleanup();
 		exit(0);
@@ -52,7 +52,7 @@ void CheckMessage(int bytes, SOCKET& socket, const char* ErrorType)
 {
 	if (SOCKET_ERROR == bytes)
 	{
-		cout << "Time Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at" << ErrorType << "(): " << WSAGetLastError() << endl;
 		closesocket(socket);
 		WSACleanup();
 		return;
@@ -84,25 +84,25 @@ fd_set createSendSet()
 	return set;
 }
 
-int checkEvents(fd_set waitRecv, fd_set waitSend)
+int checkEvents(fd_set* waitRecv, fd_set* waitSend)
 {
 	// Wait for interesting event.
-	int nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
+	int nfd = select(0, waitRecv, waitSend, NULL, NULL);
 	if (nfd == SOCKET_ERROR)
 	{
-		cout << "Time Server: Error at select(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at select(): " << WSAGetLastError() << endl;
 		WSACleanup();
-		return;
+		exit(1);
 	}
 
 	return nfd;
 }
 
-void handleEvents(int nfd, fd_set waitRecv, fd_set waitSend)
+void handleEvents(int nfd, fd_set* waitRecv, fd_set* waitSend)
 {
 	for (int i = 0; i < MAX_SOCKETS && nfd > 0; i++)
 	{
-		if (FD_ISSET(sockets[i].id, &waitRecv))
+		if (FD_ISSET(sockets[i].id, waitRecv))
 		{
 			nfd--;
 			switch (sockets[i].recv)
@@ -120,46 +120,17 @@ void handleEvents(int nfd, fd_set waitRecv, fd_set waitSend)
 
 	for (int i = 0; i < MAX_SOCKETS && nfd > 0; i++)
 	{
-		if (FD_ISSET(sockets[i].id, &waitSend))
+		if (FD_ISSET(sockets[i].id, waitSend))
 		{
 			nfd--;
 			switch (sockets[i].send)
 			{
 			case SEND:
-				//sendMessage(i);
+				sendMessage(i);
 				break;
 			}
 		}
 	}
-}
-
-void main()
-{
-	WSAData wsaData = InitWinsock();
-	SOCKET listenSocket = CreateSocket();
-	sockaddr_in serverService = CreateSocketAdd(listenSocket);
-
-	if (SOCKET_ERROR == listen(listenSocket, 5))
-	{
-		cout << "Time Server: Error at listen(): " << WSAGetLastError() << endl;
-		closesocket(listenSocket);
-		WSACleanup();
-		return;
-	}
-	addSocket(listenSocket, LISTEN);
-
-	while (true)
-	{
-		fd_set waitRecv = createRecvSet();
-		fd_set waitSend = createSendSet();
-		int nfd = checkEvents(waitRecv, waitSend);
-		handleEvents(nfd,waitRecv,waitSend);
-	}
-
-	// Closing connections and Winsock.
-	cout << "Time Server: Closing Connection.\n";
-	closesocket(listenSocket);
-	WSACleanup();
 }
 
 bool addSocket(SOCKET id, int what)
@@ -173,6 +144,12 @@ bool addSocket(SOCKET id, int what)
 			sockets[i].send = IDLE;
 			sockets[i].len = 0;
 			socketsCount++;
+			// Set the socket to be in non-blocking mode.
+			unsigned long flag = 1;
+			if (ioctlsocket(id, FIONBIO, &flag) != 0) //make the socket non-blocking
+			{
+				cout << "Web Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
+			}
 			return (true);
 		}
 	}
@@ -195,18 +172,10 @@ void acceptConnection(int index)
 	SOCKET msgSocket = accept(id, (struct sockaddr*)&from, &fromLen);
 	if (INVALID_SOCKET == msgSocket)
 	{
-		cout << "Time Server: Error at accept(): " << WSAGetLastError() << endl;
+		cout << "Web Server: Error at accept(): " << WSAGetLastError() << endl;
 		return;
 	}
-	cout << "Time Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
-
-	//
-	// Set the socket to be in non-blocking mode.
-	unsigned long flag = 1;
-	if (ioctlsocket(msgSocket, FIONBIO, &flag) != 0) //make the socket non-blocking
-	{
-		cout << "Time Server: Error at ioctlsocket(): " << WSAGetLastError() << endl;
-	}
+	cout << "Web Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
 
 	if (addSocket(msgSocket, RECEIVE) == false)
 	{
@@ -232,6 +201,7 @@ void receiveMessage(int index)
 	else
 	{
 		getRequestFromBuffer(index);
+		sockets[index].send = SEND;
 	}
 }
 
@@ -254,49 +224,13 @@ void getRequestFromBuffer(int socket_index)
 		}
 		else if (strtok_count == bodyIndex)
 		{
-			sockets[socket_index].request.body = token;
+			strcpy(sockets[socket_index].request.body, token);
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
 	}
 
 	getRequestLine(socket_index, requestLine);
-}
-
-void setMethod(int socket_index)
-{
-	if (strncmp(sockets[socket_index].buffer, "GET", 3) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = GET;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "POST", 4) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = POST;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "PUT", 3) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = PUT;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "DELETE", 6) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = Delete;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "HEAD", 4) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = HEAD;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "OPTIONS", 7) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = OPTIONS;
-	}
-	else if (strncmp(sockets[socket_index].buffer, "TRACE", 5) == 0)
-	{
-		sockets[socket_index].request.requestLine.method = TRACE;
-	}
-	else
-	{
-		//exception
-	}
 }
 
 void getRequestLine(int socket_index, char* requestLine)
@@ -316,15 +250,16 @@ void getRequestLine(int socket_index, char* requestLine)
 	{
 		if (strtok_count == 0)
 		{
-			setMethod(socket_index);
+			sockets[socket_index].request.requestLine.method = token;
 		}
 		else if (strtok_count == 1)
 		{
-			sockets[socket_index].request.requestLine.uri = token;
+			strcpy(sockets[socket_index].request.requestLine.uri, token);
 		}
 		else if (strtok_count > 2 && isContainsParam) 
 		{
-			sockets[socket_index].request.requestLine.lang = token;
+			strcpy(sockets[socket_index].request.requestLine.lang, token);
+			break;
 		}
 		strtok_count++;
 		token = strtok(nullptr, del);
@@ -345,29 +280,131 @@ bool containsParams(char* request)
 	return false;
 }
 
-void get(int socket_index, Response& response)
+char* createFilePath(int socket_index)
 {
-	char filePath[MAX_LEN] = { "C:/temp/" };
-	FILE* file = nullptr;
-	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+	char fileName[MAX_LEN] = { "C:/TEMP/" };
+	strcat(fileName, sockets[socket_index].request.requestLine.uri);
 	if (sockets[socket_index].request.requestLine.lang != nullptr)
 	{
-		strcat(filePath, ".");
-		strcat(filePath, sockets[socket_index].request.requestLine.lang);
+		strcat(fileName, ".");
+		strcat(fileName, sockets[socket_index].request.requestLine.lang);
 	}
+	strcat(fileName, ".txt");
+	return fileName;
+}
+
+void Get(int socket_index, Response* response)
+{
+	char* filePath = createFilePath(socket_index);
+	char bodyBuff[MAX_LEN];
+	FILE* file = nullptr;
 
 	file = fopen(filePath, "r");
 	if (file == nullptr)
 	{
-		response.statusLine.status = status[404];
+		response->statusLine.status = status[404];
 	}
 	else
 	{
+		response->statusLine.status = status[200];
+		fgets(bodyBuff, MAX_LEN, file);
+		response->body.append(bodyBuff);
+		fclose(file);
+	}
+}
+
+void Post(int socket_index, Response& response)
+{
+	cout << sockets[socket_index].request.body << endl;
+	response.statusLine.status = status[200];
+}
+
+void Delete_func(int socket_index, Response& response)
+{
+	int deletedSucceed;
+
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+
+	deletedSucceed = remove(filePath);
+
+	if (deletedSucceed == 0)
+	{
 		response.statusLine.status = status[200];
 	}
+	else
+	{
+		response.statusLine.status = status[404];
+	}
+}
 
-	fgets(response.body, MAX_LEN, file);
-	fclose(file);
+void Put(int socket_index, Response* response)
+{
+	char filePath[MAX_LEN] = { "C:/temp/" };
+	FILE* file = nullptr;
+	strcat(filePath, sockets[socket_index].request.requestLine.uri);
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[201];
+	}
+	else //file exist
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
+	file = fopen(filePath, "w");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[501];
+	}
+	else
+	{
+		fputs(sockets[socket_index].request.body, file);
+		fclose(file);
+	}
+
+
+}
+
+void Head(int socket_index, Response* response)
+{
+	char* filePath = createFilePath(socket_index);
+	FILE* file = nullptr;
+
+	file = fopen(filePath, "r");
+	if (file == nullptr)
+	{
+		response->statusLine.status = status[404];
+	}
+	else
+	{
+		response->statusLine.status = status[200];
+		fclose(file);
+	}
+}
+
+void Trace(int socket_index, Response* response)
+{
+	//if(sockets[socket_index].request.body != nullptr)
+		//exeption?
+	response->body = sockets[socket_index].buffer;
+	response->statusLine.status = status[200];
+}
+
+string Options()
+{
+	string optionsStr;
+
+	for (int i = 0; i < NUM_OPTIONS; i++)
+	{
+		optionsStr += methods[i];
+		optionsStr += ", ";
+	}
+
+	optionsStr += "\n";
+
+	return optionsStr;
 }
 
 string GetTime()
@@ -379,90 +416,104 @@ string GetTime()
 	return (time_str.substr(0, time_str.length() - 1));
 }
 
-void createResponseHeader(Response response)
+void createResponseHeader(Response* response, int socket_index)
 {
-	char contentLength[MAX_LEN];
-	strcat(response.header, response.statusLine.version);
-	strcat(response.header, response.statusLine.status.c_str());
-	/*if (sockets[index].request == OPTIONS)
+	string contentLength =  "";
+	response->header += response->statusLine.version;
+	response->header += response->statusLine.status;
+	if (sockets[socket_index].request.requestLine.method == "OPTIONS")
 	{
-		strcat(sendBuff, "Allow: GET, HEAD, PUT, POST, DELETE, OPTIONS, TRACE\r\n");
-	}*/
-	strcat(response.header, "Server:Apache\r\n");
-	strcat(response.header, "Content-Type: text/html; charset=UTP-8\r\n");
-	strcat(response.header, "Connection: keep - alive\r\n");
+		response->header += "Allow: "; 
+		response->header += Options() + "\r\n";
+	}
+	response->header += "Server:Apache\r\n";
+	response->header += "Connection: keep - alive\r\n";
+	response->header += "Connection: keep - alive\r\n";
+
 	string currTime = GetTime();
-	strcat(response.header, "Date:");
-	strcat(response.header, currTime.c_str());
-	strcat(response.header, "\r\n");
-	strcat(response.header, "Content-length:");
-	_itoa(strlen(response.body), contentLength, 10);
-	strcat(response.header, contentLength);
-	strcat(response.header, "\r\n\r\n");
+	response->header += "Date:";
+	response->header += currTime + "\r\n" + "Content-length:";
+	contentLength = to_string(response->body.length());
+	response->header += contentLength + "\r\n\r\n";
 }
 
-void sentResponse(int socket_index)
+string setRespondInBuffer(Response* response)
 {
-	Response response;
+	string sendBuff = { response->statusLine.version + response->statusLine.status + "\r\n" + response->header
+	+ response->body };
+
+	return sendBuff;
+}
+
+void sendMessage(int socket_index)
+{
+	Response response; 
+	char sendBuffer[MAX_LEN];
 	int bytesSent = 0;
-	char sendBuff[MAX_LEN];
 	SOCKET socket = sockets[socket_index].id;
 	
-	switch (sockets[socket_index].request.requestLine.method)
+	string method = sockets[socket_index].request.requestLine.method;
+
+	if (method == "GET")
 	{
-	case GET:
-		get(socket_index, response);
-		break;
-	case POST:
-		//
-		break;
-	case PUT:
-		break;
-	case Delete:
-		break;
-	case OPTIONS:
-		break;
-	case TRACE:
-		break;
-	case HEAD:
-		break;
+		Get(socket_index, &response);
+	}
+	else if (method == "POST")
+	{
+		Post(socket_index, response);
+	}
+	else if (method == "PUT")
+	{
+		Put(socket_index, &response);
+	}
+	else if (method == "DELETE")
+	{
+		Delete_func(socket_index, response);
+	}
+	else if (method == "OPTION")
+	{
+		response.statusLine.status = status[200];
+	}
+	else if (method == "TREACE")
+	{
+		Trace(socket_index, &response);
 	}
 
-	createResponseHeader(response);
+	createResponseHeader(&response, socket_index);
+	string sendBuff = setRespondInBuffer(&response);
+	strcpy(sendBuffer,sendBuff.c_str());
+	bytesSent = send(socket, sendBuffer, (int)strlen(sendBuffer), 0);
+	CheckMessage(bytesSent, socket, "send");
+	cout << "Web Server: Sent: " << bytesSent << "\\" << strlen(sendBuffer) << " bytes\n";
+	sockets[socket_index].send = IDLE;//X --> fix: to check if the buffer contains more messages
 }
 
-//void sendMessage(int index)
-//{
-//	int bytesSent = 0;
-//	char sendBuff[255];
-//
-//	SOCKET msgSocket = sockets[index].id;
-//	if (sockets[index].sendSubType == SEND_TIME)
-//	{
-//		// Answer client's request by the current time string.
-//
-//		// Get the current time.
-//		time_t timer;
-//		time(&timer);
-//		// Parse the current time to printable string.
-//		strcpy(sendBuff, ctime(&timer));
-//		sendBuff[strlen(sendBuff) - 1] = 0; //to remove the new-line from the created string
-//	}
-//	else if (sockets[index].sendSubType == SEND_SECONDS)
-//	{
-//		// Answer client's request by the current time in seconds.
-//
-//		// Get the current time.
-//		time_t timer;
-//		time(&timer);
-//		// Convert the number to string.
-//		itoa((int)timer, sendBuff, 10);
-//	}
-//
-//	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
-//	checkMessage(bytesSent, msgSocket, "send");
-//
-//	cout << "Time Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
-//
-//	sockets[index].send = IDLE;//X --> fix: to check if the buffer contains more messages
-//}
+void main()
+{
+	WSAData wsaData = InitWinsock();
+	SOCKET listenSocket = CreateSocket();
+	sockaddr_in serverService = CreateSocketAdd(listenSocket);
+
+	if (SOCKET_ERROR == listen(listenSocket, 5))
+	{
+		cout << "Web Server: Error at listen(): " << WSAGetLastError() << endl;
+		closesocket(listenSocket);
+		WSACleanup();
+		return;
+	}
+	addSocket(listenSocket, LISTEN);
+
+	while (true)
+	{
+		fd_set waitRecv = createRecvSet();
+		fd_set waitSend = createSendSet();
+
+		int nfd = checkEvents(&waitRecv, &waitSend);
+		handleEvents(nfd, &waitRecv, &waitSend);
+	}
+
+	// Closing connections and Winsock.
+	cout << "Web Server: Closing Connection.\n";
+	closesocket(listenSocket);
+	WSACleanup();
+}

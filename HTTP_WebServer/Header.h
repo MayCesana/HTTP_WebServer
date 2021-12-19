@@ -10,48 +10,48 @@ using namespace std;
 const int MAX_LEN = 2048;
 const int PORT = 27015;
 const int MAX_SOCKETS = 60;
-const char* HTTP_VERSION = "HTTP/1.1";
+const char* HTTP_VERSION = "HTTP/1.1 ";
 const int EMPTY = 0;
 const int LISTEN = 1;
 const int RECEIVE = 2;
 const int IDLE = 3;
 const int SEND = 4;
+#define NUM_OPTIONS 7
 
-enum Method { OPTIONS, GET, HEAD, POST, PUT, Delete, TRACE};
+//enum Method { OPTIONS, GET, HEAD, POST, PUT, Delete, TRACE};
+string methods[NUM_OPTIONS] = { "OPTIONS", "GET", "HEAD", "POST", "PUT", "Delete", "TRACE" };
 
 map<int, string> status = { {200, "200 OK\n"}, {201,"201 Created\n"}, {204,"204 NO CONTENT\n" }, { 401,"401 Unauthorized\n" },
 	{404,"404 NOT FOUND\n"},{408, "408 REQUEST TIMEOUT\n"},{411,"411 LENGTH REQUIRED\n"},{414, "Request-URI Too Large\n"},
 	{500,"500 INTERNAL SERVER_ERROR\n"}, {501,"501 NOT IMPLEMENTED\n"}, {503,"503 SERVICE UNAVAILABLE\n"},
 	{505,"505 HTTP VERSION NOT SUPPORTED\n"} };
-//map<string, string> responseHeader = { {"Server: ", ""}, {"Content-Type: ", "text / html; charset = UTP - 8"},
-	//{"Connection: ", "keep - alive"},{"Date: ", ""},{"Content-length: ", ""} };
 
 typedef struct requestLine
 {
-	Method method;
-	char* uri;
-	char* lang = nullptr;
+	string method;
+	char uri[255];
+	char lang[3];
 	const char* version = HTTP_VERSION;
 }RequestLine;
 
 typedef struct request
 {
 	RequestLine requestLine;
-	char* header;
-	char* body;
+	char header[MAX_LEN];
+	char body[MAX_LEN];
 }Request;
 
 typedef struct responseLine
 {
-	const char* version = HTTP_VERSION;
+	char* version = (char*)HTTP_VERSION;
 	string status;
 }ResponseLine;
 
 typedef struct response 
 {
 	ResponseLine statusLine;
-	char* header;
-	char* body;
+	string header;
+	string body = "";
 }Response;
 
 struct SocketState
@@ -73,7 +73,7 @@ void acceptConnection(int index);
 fd_set createRecvSet();
 fd_set createSendSet();
 void receiveMessage(int index);
-//void sendMessage(int index);
+void sendMessage(int socket_index);
 WSAData InitWinsock();
 SOCKET CreateSocket(); 
 sockaddr_in CreateSocketAdd(SOCKET& m_socket);
