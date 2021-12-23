@@ -19,11 +19,19 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClInclude Include="Declarations.h" />
+    <ClInclude Include="Response.h" />
+    <ClInclude Include="SocketsState.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="functions.h" />
-    <ClInclude Include="Header.h" />
+    <ClCompile Include="Errors.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="requestParseHandler.cpp" />
+    <ClCompile Include="Response.cpp" />
+    <ClCompile Include="server.cpp" />
+    <ClCompile Include="sets.cpp" />
+    <ClCompile Include="Socket.cpp" />
+    <ClCompile Include="SocketsState.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
